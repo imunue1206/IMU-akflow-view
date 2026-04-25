@@ -21,6 +21,16 @@ export const docApi = {
   updateTags: (docId, tagIds) => {
     return api.put(`/docs/tags/${docId}`, tagIds)
   },
+  updateContent: (docId, content) => {
+    return api.put(`/docs/${docId}/content`, content, {
+      headers: { 'Content-Type': 'text/plain' }
+    })
+  },
+  export: (docId) => {
+    return api.get(`/docs/${docId}/export`, {
+      responseType: 'blob'
+    })
+  },
   delete: (docId) => {
     return api.delete(`/docs/${docId}`)
   },

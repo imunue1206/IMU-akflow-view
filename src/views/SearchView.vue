@@ -108,7 +108,7 @@
                     <th style="width: 30%">文档</th>
                     <th style="width: 15%">匹配类型</th>
                     <th style="width: 25%">相关度</th>
-                    <th>标签</th>
+                    <th style="width: 15%">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -118,9 +118,9 @@
                     class="result-row"
                   >
                     <td>
-                      <div class="d-flex align-center">
+                      <div class="d-flex align-center cursor-pointer" @click="viewDoc(item)">
                         <v-icon color="primary" class="mr-2" size="small">mdi-file-document</v-icon>
-                        <span class="font-weight-medium">{{ item.docTitle }}</span>
+                        <span class="font-weight-medium text-primary">{{ item.docTitle }}</span>
                       </div>
                     </td>
                     <td>
@@ -149,16 +149,12 @@
                       </div>
                     </td>
                     <td>
-                      <v-chip
-                        v-for="tag in item.tags"
-                        :key="tag.tagId"
-                        size="x-small"
-                        :color="isTagSelected(tag.tagId) ? 'primary' : 'grey'"
-                        :variant="isTagSelected(tag.tagId) ? 'flat' : 'tonal'"
-                        class="mr-1"
-                      >
-                        {{ tag.tagName }}
-                      </v-chip>
+                      <v-btn icon size="small" variant="text" title="查看" @click="viewDoc(item)">
+                        <v-icon size="small">mdi-eye</v-icon>
+                      </v-btn>
+                      <v-btn icon size="small" variant="text" color="primary" title="导出" @click="quickExport(item)">
+                        <v-icon size="small">mdi-download</v-icon>
+                      </v-btn>
                     </td>
                   </tr>
                 </tbody>
@@ -184,6 +180,63 @@
       </v-expand-transition>
     </div>
 
+    <v-dialog v-model="viewDialog" fullscreen>
+      <v-card class="doc-viewer-card">
+        <v-toolbar color="transparent" flat>
+          <v-btn icon variant="text" @click="viewDialog = false">
+            <v-icon>mdi-arrow-left</v-icon>
+          </v-btn>
+          <v-toolbar-title class="font-weight-medium">
+            {{ viewItem?.docTitle }}
+          </v-toolbar-title>
+          <v-spacer></v-spacer>
+          <v-btn 
+            variant="text" 
+            prepend-icon="mdi-download"
+            @click="exportDoc"
+          >
+            导出
+          </v-btn>
+        </v-toolbar>
+
+        <v-divider></v-divider>
+
+        <v-card-text class="pa-0">
+          <div v-if="viewLoading" class="d-flex justify-center align-center py-16">
+            <v-progress-circular indeterminate color="primary" size="48"></v-progress-circular>
+          </div>
+
+          <div v-else-if="viewError" class="pa-8 text-center">
+            <v-icon size="64" color="error">mdi-alert-circle</v-icon>
+            <p class="mt-4 text-body-1 text-grey">{{ viewError }}</p>
+          </div>
+
+          <div v-else class="doc-container">
+            <div class="markdown-content" v-html="renderedContent"></div>
+          </div>
+        </v-card-text>
+
+        <v-divider></v-divider>
+
+        <v-card-actions class="pa-3">
+          <v-chip
+            v-for="tag in viewItem?.tags"
+            :key="tag.tagId"
+            size="small"
+            class="mr-1"
+            color="primary"
+            variant="tonal"
+          >
+            {{ tag.tagName }}
+          </v-chip>
+          <v-spacer></v-spacer>
+          <span class="text-caption text-grey">
+            创建于 {{ viewItem?.createTime?.slice(0, 10) }}
+          </span>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="3000">
       {{ snackbar.text }}
       <template v-slot:actions>
@@ -194,17 +247,29 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
+import MarkdownIt from 'markdown-it'
 import { docApi, tagApi } from '@/api'
+
+const md = new MarkdownIt({
+  html: true,
+  linkify: true,
+  typographer: true
+})
 
 const loading = ref(false)
 const searched = ref(false)
-const selectedTags = ref([])
-const availableTags = ref([])
-const items = ref([])
-const total = ref(0)
+const viewDialog = ref(false)
+const viewLoading = ref(false)
+const viewError = ref('')
 const page = ref(1)
 const pageSize = ref(10)
+const total = ref(0)
+const items = ref([])
+const availableTags = ref([])
+const selectedTags = ref([])
+const viewItem = ref(null)
+const renderedContent = ref('')
 
 const snackbar = reactive({
   show: false,
@@ -222,13 +287,9 @@ const isSelected = (tagId) => {
   return selectedTags.value.some(t => t.tagId === tagId)
 }
 
-const isTagSelected = (tagId) => {
-  return selectedTags.value.some(t => t.tagId === tagId)
-}
-
 const toggleTag = (tag) => {
   if (isSelected(tag.tagId)) {
-    removeTag(tag.tagId)
+    selectedTags.value = selectedTags.value.filter(t => t.tagId !== tag.tagId)
   } else {
     selectedTags.value.push(tag)
   }
@@ -236,6 +297,10 @@ const toggleTag = (tag) => {
 
 const removeTag = (tagId) => {
   selectedTags.value = selectedTags.value.filter(t => t.tagId !== tagId)
+}
+
+const isTagSelected = (tagId) => {
+  return selectedTags.value.some(t => t.tagId === tagId)
 }
 
 const fetchTags = async () => {
@@ -246,33 +311,81 @@ const fetchTags = async () => {
     }
   } catch (e) {
     console.error('获取标签失败:', e)
-    showMessage('获取标签失败', 'error')
   }
 }
 
 const search = async (options = {}) => {
-  if (!selectedTags.value.length) return
+  if (selectedTags.value.length === 0) {
+    showMessage('请先选择标签', 'warning')
+    return
+  }
   
   loading.value = true
   searched.value = true
+  page.value = options.page || 1
+  
   try {
-    const currentPage = options.page || page.value
     const tagIds = selectedTags.value.map(t => t.tagId)
-    
-    const res = await docApi.searchByTags(tagIds, currentPage, pageSize.value)
+    const res = await docApi.searchByTags(tagIds, page.value, pageSize.value)
     if (res.data.code === 200) {
       items.value = res.data.data.list || []
       total.value = res.data.data.total || 0
-      page.value = currentPage
     } else {
       showMessage(res.data.message || '搜索失败', 'error')
     }
   } catch (e) {
     console.error('搜索失败:', e)
-    showMessage('搜索失败: ' + (e.response?.data?.message || e.message), 'error')
+    showMessage('搜索失败', 'error')
   } finally {
     loading.value = false
   }
+}
+
+const viewDoc = async (item) => {
+  viewItem.value = item
+  viewDialog.value = true
+  viewLoading.value = true
+  viewError.value = ''
+  renderedContent.value = ''
+  
+  try {
+    const res = await docApi.getById(item.docId)
+    if (res.data.code === 200) {
+      const doc = res.data.data
+      viewItem.value = doc
+      renderedContent.value = md.render(doc.docContent || '（文档内容为空）')
+    } else {
+      viewError.value = res.data.message || '获取文档内容失败'
+    }
+  } catch (e) {
+    console.error('获取文档详情失败:', e)
+    viewError.value = e.response?.data?.message || '获取文档内容失败'
+  } finally {
+    viewLoading.value = false
+  }
+}
+
+const quickExport = async (item) => {
+  try {
+    const res = await docApi.export(item.docId)
+    const blob = new Blob([res.data], { type: 'text/markdown;charset=utf-8' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${item.docTitle}.md`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    showMessage('导出成功')
+  } catch (e) {
+    console.error('导出失败:', e)
+    showMessage('导出失败', 'error')
+  }
+}
+
+const exportDoc = async () => {
+  await quickExport(viewItem.value)
 }
 
 onMounted(() => {
@@ -282,57 +395,105 @@ onMounted(() => {
 
 <style scoped>
 .search-view {
-  min-height: 100vh;
+  padding: 24px;
 }
-
 .content {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px;
 }
-
 .header {
   margin-bottom: 24px;
 }
-
-.section-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-}
-
-.tags-container {
-  display: flex;
-  flex-wrap: wrap;
-}
-
-.tag-chip {
+.cursor-pointer {
   cursor: pointer;
-  transition: all 0.2s ease;
 }
-
-.tag-chip:hover {
-  transform: scale(1.05);
-}
-
-.selected-info {
-  padding: 16px;
-  background: #f5f5f5;
-  border-radius: 8px;
-}
-
-.result-row {
-  transition: background 0.2s ease;
-}
-
 .result-row:hover {
-  background: #f5f5f5 !important;
+  background: #f5f5f5;
 }
-
-.empty-state {
+.doc-viewer-card {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   background: #fafafa;
-  border-radius: 8px;
+}
+.doc-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+}
+.markdown-content {
+  font-size: 15px;
+  line-height: 1.8;
+  color: #333;
+}
+.markdown-content :deep(h1) {
+  font-size: 2em;
+  font-weight: 600;
+  margin: 1em 0 0.5em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #eee;
+}
+.markdown-content :deep(h2) {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 1em 0 0.5em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid #eee;
+}
+.markdown-content :deep(h3) {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 1em 0 0.5em;
+}
+.markdown-content :deep(p) {
+  margin: 0.8em 0;
+}
+.markdown-content :deep(ul),
+.markdown-content :deep(ol) {
+  padding-left: 1.5em;
+  margin: 0.8em 0;
+}
+.markdown-content :deep(li) {
+  margin: 0.3em 0;
+}
+.markdown-content :deep(code) {
+  background: #f0f0f0;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 0.9em;
+}
+.markdown-content :deep(pre) {
+  background: #f6f8fa;
+  padding: 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.markdown-content :deep(pre code) {
+  background: none;
+  padding: 0;
+}
+.markdown-content :deep(blockquote) {
+  border-left: 4px solid #ddd;
+  padding-left: 1em;
+  margin: 0.8em 0;
+  color: #666;
+}
+.markdown-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.8em 0;
+}
+.markdown-content :deep(th),
+.markdown-content :deep(td) {
+  border: 1px solid #ddd;
+  padding: 0.5em;
+  text-align: left;
+}
+.markdown-content :deep(th) {
+  background: #f6f8fa;
 }
 </style>

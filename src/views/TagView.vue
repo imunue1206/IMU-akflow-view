@@ -41,10 +41,10 @@
           </v-btn>
         </template>
         <template v-slot:item.actions="{ item }">
-          <v-btn icon size="small" variant="text" @click="openDialog(item)">
+          <v-btn icon size="small" variant="text" title="编辑" @click="openDialog(item)">
             <v-icon>mdi-pencil</v-icon>
           </v-btn>
-          <v-btn icon size="small" variant="text" color="error" @click="confirmDelete(item)">
+          <v-btn icon size="small" variant="text" color="error" title="删除" @click="confirmDelete(item)">
             <v-icon>mdi-delete</v-icon>
           </v-btn>
         </template>
