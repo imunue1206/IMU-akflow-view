@@ -19,7 +19,7 @@ const routes = [
     path: '/search',
     name: 'Search',
     component: () => import('@/views/SearchView.vue')
-  }
+  },
 ]
 
 const router = createRouter({

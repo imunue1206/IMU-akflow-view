@@ -69,4 +69,76 @@ export const tagApi = {
   }
 }
 
+export const aiProviderApi = {
+  getPage: (page = 1, pageSize = 10, keyword = '') => {
+    return api.get('/ai/providers/page', { params: { page, pageSize, keyword } })
+  },
+  getById: (providerId) => {
+    return api.get(`/ai/providers/${providerId}`)
+  },
+  getList: () => {
+    return api.get('/ai/providers/list')
+  },
+  create: (data) => {
+    return api.post('/ai/providers', data)
+  },
+  update: (providerId, data) => {
+    return api.put(`/ai/providers/${providerId}`, data)
+  },
+  delete: (providerId) => {
+    return api.delete(`/ai/providers/${providerId}`)
+  }
+}
+
+export const aiModelApi = {
+  getPage: (page = 1, pageSize = 10, providerId = null, keyword = '') => {
+    return api.get('/ai/models/page', { params: { page, pageSize, providerId, keyword } })
+  },
+  getById: (modelId) => {
+    return api.get(`/ai/models/${modelId}`)
+  },
+  getList: (providerId = null) => {
+    return api.get('/ai/models/list', { params: { providerId } })
+  },
+  create: (data) => {
+    return api.post('/ai/models', data)
+  },
+  update: (modelId, data) => {
+    return api.put(`/ai/models/${modelId}`, data)
+  },
+  delete: (modelId) => {
+    return api.delete(`/ai/models/${modelId}`)
+  }
+}
+
+export const aiStatisticsApi = {
+  getOverview: (startDate = null, endDate = null) => {
+    return api.get('/ai/statistics/overview', { params: { startDate, endDate } })
+  }
+}
+
+export const aiConversationApi = {
+  getPage: (page = 1, pageSize = 10, modelId = null, status = null) => {
+    return api.get('/ai/conversations/page', { params: { page, pageSize, modelId, status } })
+  },
+  getById: (conversationId) => {
+    return api.get(`/ai/conversations/${conversationId}`)
+  },
+  create: (modelId, title = '') => {
+    return api.post('/ai/conversations', { modelId, title })
+  },
+  archive: (conversationId) => {
+    return api.put(`/ai/conversations/${conversationId}/archive`)
+  },
+  delete: (conversationId) => {
+    return api.delete(`/ai/conversations/${conversationId}`)
+  },
+  getMessages: (conversationId, page = 1, pageSize = 20) => {
+    return api.get(`/ai/conversations/${conversationId}/messages`, { params: { page, pageSize } })
+  },
+  sendMessage: (conversationId, content) => {
+    return api.post(`/ai/conversations/${conversationId}/messages`, { content })
+  }
+}
+
 export default api

@@ -1,11 +1,12 @@
 <template>
   <v-app>
     <v-navigation-drawer v-model="drawer" app permanent width="260">
-      <v-list-item class="pa-4" title="文档管理系统" subtitle="知识库管理"></v-list-item>
+      <v-list-item class="pa-4" title="文档聚合系统" subtitle="位图标签关联"></v-list-item>
       <v-divider></v-divider>
       <v-list density="compact" nav>
+        <v-list-subheader>知识库</v-list-subheader>
         <v-list-item
-          v-for="item in navItems"
+          v-for="item in knowledgeItems"
           :key="item.value"
           :title="item.title"
           :to="item.to"
@@ -39,7 +40,7 @@ import { useRoute } from 'vue-router'
 const drawer = ref(true)
 const route = useRoute()
 
-const navItems = [
+const knowledgeItems = [
   { title: '文档管理', value: 'docs', to: '/docs', icon: 'mdi-file-document-multiple' },
   { title: '标签管理', value: 'tags', to: '/tags', icon: 'mdi-tag-multiple' },
   { title: '智能搜索', value: 'search', to: '/search', icon: 'mdi-brain' }
@@ -49,9 +50,9 @@ const pageTitle = computed(() => {
   const titles = {
     '/docs': '文档管理',
     '/tags': '标签管理',
-    '/search': '智能搜索'
+    '/search': '智能搜索',
   }
-  return titles[route.path] || '文档管理系统'
+  return titles[route.path] || 'AI 工作流系统'
 })
 </script>
 

@@ -544,7 +544,7 @@ onMounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 40px;
-  max-width: 900px;
+  max-width: 70%;
   margin: 0 auto;
   width: 100%;
 }
