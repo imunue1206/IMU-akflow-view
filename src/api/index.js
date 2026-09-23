@@ -18,6 +18,9 @@ export const docApi = {
   upload: (path, tagIds = []) => {
     return api.post('/docs/upload', { path, tagIds })
   },
+  create: (docTitle, docContent, tagIds = []) => {
+    return api.post('/docs/create', { docTitle, docContent, tagIds })
+  },
   updateTags: (docId, tagIds) => {
     return api.put(`/docs/tags/${docId}`, tagIds)
   },

@@ -64,29 +64,42 @@
       </v-data-table>
     </v-card>
 
-    <v-dialog v-model="dialog" max-width="600" persistent>
-      <v-card>
-        <v-card-title class="text-h5 pa-4">
-          {{ isEdit ? '编辑标签' : '新建文档' }}
+    <v-dialog v-model="dialog" max-width="820" persistent>
+      <v-card class="create-dialog">
+        <v-card-title class="d-flex align-center pa-4">
+          <span class="text-h6">{{ isEdit ? '编辑标签' : '新建文档' }}</span>
+          <v-spacer></v-spacer>
+          <v-btn icon variant="text" size="small" @click="dialog = false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
         </v-card-title>
         <v-divider></v-divider>
-        <v-card-text class="pa-4">
-          <v-form ref="formRef" v-model="valid">
-            <v-text-field
-              v-if="!isEdit"
-              v-model="formData.path"
-              label="文件路径"
-              variant="outlined"
-              class="mb-3"
-              placeholder="/Users/xxx/Documents/xxx.md"
-              hint="输入本地文件的完整路径"
-              persistent-hint
-            ></v-text-field>
 
-            <v-alert v-if="isEdit" type="info" density="compact" class="mb-3">
+        <v-tabs
+          v-if="!isEdit"
+          v-model="createTab"
+          color="primary"
+          density="comfortable"
+          grow
+          class="create-tabs"
+        >
+          <v-tab value="drop">
+            <v-icon class="mr-2" size="20">mdi-cloud-upload-outline</v-icon>
+            拖拽上传
+          </v-tab>
+          <v-tab value="compose">
+            <v-icon class="mr-2" size="20">mdi-pencil-plus-outline</v-icon>
+            在线编写
+          </v-tab>
+        </v-tabs>
+        <v-divider v-if="!isEdit"></v-divider>
+
+        <v-card-text class="pa-4">
+          <!-- 编辑标签 -->
+          <template v-if="isEdit">
+            <v-alert type="info" density="compact" variant="tonal" class="mb-3">
               文件名：{{ formData.path }}
             </v-alert>
-
             <v-combobox
               v-model="formData.selectedTags"
               :items="availableTags"
@@ -99,28 +112,157 @@
               variant="outlined"
               hint="选择已存在的标签"
             ></v-combobox>
-          </v-form>
+          </template>
+
+          <!-- 拖拽上传 -->
+          <template v-else-if="createTab === 'drop'">
+            <div
+              class="drop-zone"
+              :class="{ 'drop-zone--active': dragActive, 'drop-zone--filled': !!selectedFile }"
+              @dragenter.prevent="dragActive = true"
+              @dragover.prevent="dragActive = true"
+              @dragleave.prevent="dragActive = false"
+              @drop.prevent="onFileDrop"
+              @click="triggerFilePick"
+            >
+              <input
+                ref="fileInputRef"
+                type="file"
+                accept=".md,text/markdown"
+                class="d-none"
+                @change="onFileChange"
+              />
+
+              <template v-if="!selectedFile">
+                <v-icon size="56" :color="dragActive ? 'primary' : 'grey-lighten-1'">
+                  {{ dragActive ? 'mdi-file-download-outline' : 'mdi-cloud-upload-outline' }}
+                </v-icon>
+                <div class="drop-zone__title mt-3">
+                  {{ dragActive ? '松开即可上传' : '将 Markdown 文件拖拽到此处' }}
+                </div>
+                <div class="drop-zone__hint mt-1">或点击选择文件</div>
+              </template>
+
+              <template v-else>
+                <v-icon size="44" color="primary">mdi-language-markdown</v-icon>
+                <div class="drop-zone__title mt-3 text-body-1">
+                  {{ selectedFile.name }}
+                </div>
+                <div class="mt-2">
+                  <v-chip size="x-small" color="primary" variant="tonal">
+                    {{ formatSize(selectedFile.size) }}
+                  </v-chip>
+                  <v-chip size="x-small" color="grey" variant="tonal" class="ml-1">
+                    {{ droppedContent.length }} 字符
+                  </v-chip>
+                  <v-chip
+                    size="x-small"
+                    color="grey"
+                    variant="text"
+                    class="ml-1"
+                    @click.stop="clearSelectedFile"
+                  >
+                    移除
+                  </v-chip>
+                </div>
+              </template>
+            </div>
+
+            <div class="d-flex align-center mt-3">
+              <v-icon size="16" color="grey" class="mr-1">mdi-information-outline</v-icon>
+              <span class="text-caption text-grey">
+                {{ readingFile ? '正在读取文件内容…' : '仅支持 Markdown（.md）格式，同名文档将自动覆盖' }}
+              </span>
+            </div>
+
+            <v-combobox
+              v-model="formData.selectedTags"
+              :items="availableTags"
+              item-title="tagName"
+              item-value="tagId"
+              label="选择标签"
+              multiple
+              chips
+              closable-chips
+              variant="outlined"
+              class="mt-4"
+              hide-details
+            ></v-combobox>
+          </template>
+
+          <!-- 在线编写 -->
+          <template v-else>
+            <v-text-field
+              v-model="composeForm.title"
+              label="文档标题"
+              variant="outlined"
+              density="comfortable"
+              placeholder="例如：投资周报"
+              hint="将以标题命名，保存为 .md 文件"
+              persistent-hint
+            ></v-text-field>
+
+            <v-combobox
+              v-model="formData.selectedTags"
+              :items="availableTags"
+              item-title="tagName"
+              item-value="tagId"
+              label="选择标签"
+              multiple
+              chips
+              closable-chips
+              variant="outlined"
+              class="mt-5"
+              hide-details
+            ></v-combobox>
+
+            <div class="compose-editor mt-5">
+              <div class="compose-editor__bar">
+                <v-btn-toggle
+                  v-model="composeMode"
+                  density="compact"
+                  variant="outlined"
+                  divided
+                  mandatory
+                  color="primary"
+                >
+                  <v-btn value="edit" size="small">
+                    <v-icon size="16" class="mr-1">mdi-pencil</v-icon>
+                    编辑
+                  </v-btn>
+                  <v-btn value="preview" size="small">
+                    <v-icon size="16" class="mr-1">mdi-eye-outline</v-icon>
+                    预览
+                  </v-btn>
+                </v-btn-toggle>
+                <v-spacer></v-spacer>
+                <span class="text-caption text-grey">{{ composeForm.content.length }} 字符</span>
+              </div>
+
+              <textarea
+                v-if="composeMode === 'edit'"
+                v-model="composeForm.content"
+                class="compose-textarea"
+                placeholder="# 标题&#10;&#10;开始编写 Markdown 内容..."
+              ></textarea>
+              <div
+                v-else
+                class="markdown-content compose-preview"
+                v-html="composePreview"
+              ></div>
+            </div>
+          </template>
         </v-card-text>
+
         <v-divider></v-divider>
         <v-card-actions class="pa-4">
           <v-spacer></v-spacer>
           <v-btn variant="text" @click="dialog = false">取消</v-btn>
-          <v-btn 
-            v-if="!isEdit" 
-            color="primary" 
-            :loading="saving" 
-            :disabled="!formData.path" 
-            @click="save"
-          >
-            上传
-          </v-btn>
-          <v-btn 
-            v-else 
-            color="primary" 
-            :loading="saving" 
-            @click="save"
-          >
+          <v-btn v-if="isEdit" color="primary" :loading="saving" @click="save">
             保存
+          </v-btn>
+          <v-btn v-else color="primary" :loading="saving" :disabled="!canSubmit" @click="save">
+            {{ createTab === 'drop' ? '上传' : '创建' }}
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -258,7 +400,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { docApi, tagApi } from '@/api'
 
@@ -276,7 +418,6 @@ const deleteDialog = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const viewLoading = ref(false)
-const valid = ref(false)
 const isEdit = ref(false)
 const isEditing = ref(false)
 const deleteItem = ref(null)
@@ -285,10 +426,32 @@ const editContent = ref('')
 const editTags = ref([])
 const renderedContent = ref('')
 const viewError = ref('')
-const formRef = ref(null)
 const items = ref([])
 const total = ref(0)
 const availableTags = ref([])
+
+// 新建文档 —— 拖拽上传 / 在线编写
+const createTab = ref('drop')
+const dragActive = ref(false)
+const selectedFile = ref(null)
+const droppedContent = ref('')
+const readingFile = ref(false)
+const fileInputRef = ref(null)
+const composeMode = ref('edit')
+const composeForm = reactive({
+  title: '',
+  content: ''
+})
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024
+
+const composePreview = computed(() => md.render(composeForm.content || ''))
+
+const canSubmit = computed(() => {
+  if (isEdit.value) return true
+  if (createTab.value === 'drop') return !!selectedFile.value && !readingFile.value
+  return !!composeForm.title.trim() && !!composeForm.content.trim()
+})
 
 const snackbar = reactive({
   show: false,
@@ -452,8 +615,66 @@ const openDialog = async (item = null) => {
       path: '',
       selectedTags: []
     })
+    createTab.value = 'drop'
+    dragActive.value = false
+    selectedFile.value = null
+    droppedContent.value = ''
+    readingFile.value = false
+    composeMode.value = 'edit'
+    composeForm.title = ''
+    composeForm.content = ''
   }
   dialog.value = true
+}
+
+const formatSize = (size) => {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+const isMarkdownFile = (file) => /\.md$/i.test(file.name)
+
+const applyFile = async (file) => {
+  if (!file) return
+  if (!isMarkdownFile(file)) {
+    showMessage('仅支持 .md 格式文件', 'error')
+    return
+  }
+  if (file.size > MAX_FILE_SIZE) {
+    showMessage('文件过大，最大支持 10MB', 'error')
+    return
+  }
+
+  readingFile.value = true
+  try {
+    droppedContent.value = await file.text()
+    selectedFile.value = file
+  } catch (e) {
+    console.error('读取文件失败:', e)
+    showMessage('读取文件失败', 'error')
+  } finally {
+    readingFile.value = false
+  }
+}
+
+const triggerFilePick = () => {
+  fileInputRef.value?.click()
+}
+
+const onFileChange = (e) => {
+  applyFile(e.target.files?.[0])
+  e.target.value = ''
+}
+
+const onFileDrop = (e) => {
+  dragActive.value = false
+  applyFile(e.dataTransfer?.files?.[0])
+}
+
+const clearSelectedFile = () => {
+  selectedFile.value = null
+  droppedContent.value = ''
 }
 
 const openEditTagDialog = async (item) => {
@@ -472,16 +693,22 @@ const save = async () => {
   try {
     const tagIds = formData.selectedTags
       .map(tag => (typeof tag === 'object' ? tag.tagId : tag))
-    
+
     let res
     if (isEdit.value) {
       res = await docApi.updateTags(formData.docId, tagIds)
+    } else if (createTab.value === 'drop') {
+      res = await docApi.create(selectedFile.value.name, droppedContent.value, tagIds)
     } else {
-      res = await docApi.upload(formData.path, tagIds)
+      res = await docApi.create(composeForm.title, composeForm.content, tagIds)
     }
-    
+
     if (res.data.code === 200) {
-      showMessage(isEdit.value ? '更新成功' : '上传成功')
+      if (isEdit.value) {
+        showMessage('更新成功')
+      } else {
+        showMessage(createTab.value === 'drop' ? '上传成功' : '创建成功')
+      }
       dialog.value = false
       fetchData()
     } else {
@@ -533,6 +760,88 @@ onMounted(() => {
 }
 .cursor-pointer {
   cursor: pointer;
+}
+.create-dialog {
+  border-radius: 12px;
+}
+.create-tabs {
+  border-bottom: none;
+}
+.create-tabs .v-tab {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  justify-content: center;
+}
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  padding: 32px 24px;
+  border: 2px dashed #d5d9e0;
+  border-radius: 12px;
+  background: #fafbfc;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.drop-zone:hover {
+  border-color: #1976d2;
+  background: #f5f9ff;
+}
+.drop-zone--active {
+  border-color: #1976d2;
+  background: #eaf3ff;
+  transform: scale(1.01);
+}
+.drop-zone--filled {
+  border-style: solid;
+  border-color: #1976d2;
+  background: #f5f9ff;
+}
+.drop-zone__title {
+  font-size: 15px;
+  font-weight: 500;
+  color: #37474f;
+  word-break: break-all;
+}
+.drop-zone__hint {
+  font-size: 13px;
+  color: #90a4ae;
+}
+.compose-editor {
+  border: 1px solid #d5d9e0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.compose-editor__bar {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: #fafbfc;
+  border-bottom: 1px solid #e8ebef;
+}
+.compose-textarea {
+  display: block;
+  width: 100%;
+  height: 260px;
+  padding: 16px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #333;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+}
+.compose-preview {
+  height: 260px;
+  padding: 16px 20px;
+  overflow-y: auto;
 }
 .doc-viewer-card {
   display: flex;
