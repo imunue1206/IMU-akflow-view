@@ -29,6 +29,11 @@ export const docApi = {
       headers: { 'Content-Type': 'text/plain' }
     })
   },
+  updateTitle: (docId, title) => {
+    return api.put(`/docs/${docId}/title`, title, {
+      headers: { 'Content-Type': 'text/plain' }
+    })
+  },
   export: (docId) => {
     return api.get(`/docs/${docId}/export`, {
       responseType: 'blob'

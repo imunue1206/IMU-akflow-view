@@ -53,6 +53,9 @@
             </v-chip>
           </div>
         </template>
+        <template v-slot:item.createTime="{ item }">
+          {{ formatDateTime(item.createTime) }}
+        </template>
         <template v-slot:item.actions="{ item }">
           <v-btn icon size="small" variant="text" color="primary" title="导出" @click="quickExport(item)">
             <v-icon>mdi-download</v-icon>
@@ -190,68 +193,7 @@
             ></v-combobox>
           </template>
 
-          <!-- 在线编写 -->
-          <template v-else>
-            <v-text-field
-              v-model="composeForm.title"
-              label="文档标题"
-              variant="outlined"
-              density="comfortable"
-              placeholder="例如：投资周报"
-              hint="将以标题命名，保存为 .md 文件"
-              persistent-hint
-            ></v-text-field>
-
-            <v-combobox
-              v-model="formData.selectedTags"
-              :items="availableTags"
-              item-title="tagName"
-              item-value="tagId"
-              label="选择标签"
-              multiple
-              chips
-              closable-chips
-              variant="outlined"
-              class="mt-5"
-              hide-details
-            ></v-combobox>
-
-            <div class="compose-editor mt-5">
-              <div class="compose-editor__bar">
-                <v-btn-toggle
-                  v-model="composeMode"
-                  density="compact"
-                  variant="outlined"
-                  divided
-                  mandatory
-                  color="primary"
-                >
-                  <v-btn value="edit" size="small">
-                    <v-icon size="16" class="mr-1">mdi-pencil</v-icon>
-                    编辑
-                  </v-btn>
-                  <v-btn value="preview" size="small">
-                    <v-icon size="16" class="mr-1">mdi-eye-outline</v-icon>
-                    预览
-                  </v-btn>
-                </v-btn-toggle>
-                <v-spacer></v-spacer>
-                <span class="text-caption text-grey">{{ composeForm.content.length }} 字符</span>
-              </div>
-
-              <textarea
-                v-if="composeMode === 'edit'"
-                v-model="composeForm.content"
-                class="compose-textarea"
-                placeholder="# 标题&#10;&#10;开始编写 Markdown 内容..."
-              ></textarea>
-              <div
-                v-else
-                class="markdown-content compose-preview"
-                v-html="composePreview"
-              ></div>
-            </div>
-          </template>
+          <!-- 在线编写：点击 Tab 由脚本接管，直接打开沉浸式编辑器 -->
         </v-card-text>
 
         <v-divider></v-divider>
@@ -262,11 +204,21 @@
             保存
           </v-btn>
           <v-btn v-else color="primary" :loading="saving" :disabled="!canSubmit" @click="save">
-            {{ createTab === 'drop' ? '上传' : '创建' }}
+            上传
           </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- 沉浸式在线编写/编辑（全定制 overlay，不走 v-dialog） -->
+    <ComposeEditor
+      v-model="composeOpen"
+      :doc="composeDoc"
+      :available-tags="availableTags"
+      :saving="saving"
+      @create="onEditorCreate"
+      @save="onEditorSave"
+    />
 
     <v-dialog v-model="viewDialog" fullscreen>
       <v-card class="doc-viewer-card">
@@ -278,33 +230,15 @@
             {{ viewItem?.docTitle }}
           </v-toolbar-title>
           <v-spacer></v-spacer>
-          <v-btn 
-            v-if="!isEditing"
-            variant="text" 
+          <v-btn
+            variant="text"
             prepend-icon="mdi-pencil"
-            @click="enableEdit"
+            @click="openImmersiveEdit(viewItem)"
           >
             编辑
           </v-btn>
-          <v-btn 
-            v-if="isEditing"
-            variant="text" 
-            color="error"
-            @click="cancelEdit"
-          >
-            取消
-          </v-btn>
-          <v-btn 
-            v-if="isEditing"
-            color="primary"
-            :loading="saving"
-            @click="saveContent"
-          >
-            保存
-          </v-btn>
-          <v-btn 
-            v-if="!isEditing"
-            variant="text" 
+          <v-btn
+            variant="text"
             prepend-icon="mdi-download"
             @click="exportDoc"
           >
@@ -325,41 +259,13 @@
           </div>
 
           <div v-else class="doc-container">
-            <div v-if="isEditing" class="edit-mode">
-              <v-card class="mb-4" flat>
-                <v-card-title class="text-subtitle-1 pb-2">标签</v-card-title>
-                <v-card-text class="pt-0">
-                  <v-combobox
-                    v-model="editTags"
-                    :items="availableTags"
-                    item-title="tagName"
-                    item-value="tagId"
-                    label="选择标签"
-                    multiple
-                    chips
-                    closable-chips
-                    variant="outlined"
-                  ></v-combobox>
-                </v-card-text>
-              </v-card>
-              <v-card flat>
-                <v-card-title class="text-subtitle-1 pb-2">内容</v-card-title>
-                <v-card-text class="pt-0">
-                  <textarea
-                    v-model="editContent"
-                    class="markdown-editor"
-                    placeholder="开始编辑..."
-                  ></textarea>
-                </v-card-text>
-              </v-card>
-            </div>
-            <div v-else class="markdown-content" v-html="renderedContent"></div>
+            <div class="markdown-content" v-html="renderedContent"></div>
           </div>
         </v-card-text>
 
-        <v-divider v-if="!isEditing"></v-divider>
+        <v-divider></v-divider>
 
-        <v-card-actions v-if="!isEditing" class="pa-3">
+        <v-card-actions class="pa-3">
           <v-chip
             v-for="tag in viewItem?.tags"
             :key="tag.tagId"
@@ -372,7 +278,7 @@
           </v-chip>
           <v-spacer></v-spacer>
           <span class="text-caption text-grey">
-            创建于 {{ viewItem?.createTime?.slice(0, 10) }}
+            创建于 {{ formatDateTime(viewItem?.createTime) }}
           </span>
         </v-card-actions>
       </v-card>
@@ -400,9 +306,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { docApi, tagApi } from '@/api'
+import ComposeEditor from '@/components/ComposeEditor.vue'
 
 const md = new MarkdownIt({
   html: true,
@@ -419,38 +326,93 @@ const saving = ref(false)
 const deleting = ref(false)
 const viewLoading = ref(false)
 const isEdit = ref(false)
-const isEditing = ref(false)
 const deleteItem = ref(null)
 const viewItem = ref(null)
-const editContent = ref('')
-const editTags = ref([])
 const renderedContent = ref('')
 const viewError = ref('')
 const items = ref([])
 const total = ref(0)
 const availableTags = ref([])
 
-// 新建文档 —— 拖拽上传 / 在线编写
+// 新建文档 —— 拖拽上传（小弹窗）/ 在线编写（沉浸式编辑器）
 const createTab = ref('drop')
 const dragActive = ref(false)
 const selectedFile = ref(null)
 const droppedContent = ref('')
 const readingFile = ref(false)
 const fileInputRef = ref(null)
-const composeMode = ref('edit')
-const composeForm = reactive({
-  title: '',
-  content: ''
-})
+const composeOpen = ref(false)
+// 沉浸式编辑器的模式：null = 创建，文档对象 = 编辑
+const composeDoc = ref(null)
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 
-const composePreview = computed(() => md.render(composeForm.content || ''))
+// 「在线编写」Tab 作为启动器：关掉小弹窗，弹出沉浸式编辑器
+watch(createTab, (val) => {
+  if (val === 'compose') {
+    createTab.value = 'drop'
+    composeDoc.value = null
+    dialog.value = false
+    composeOpen.value = true
+  }
+})
+
+const onEditorCreate = async (payload) => {
+  saving.value = true
+  try {
+    const res = await docApi.create(payload.docTitle, payload.docContent, payload.tagIds)
+    if (res.data.code === 200) {
+      showMessage('创建成功')
+      composeOpen.value = false
+      composeDoc.value = null
+      fetchData()
+    } else {
+      showMessage(res.data.message || '创建失败', 'error')
+    }
+  } catch (e) {
+    console.error('创建失败:', e)
+    showMessage('操作失败: ' + (e.response?.data?.message || e.message), 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
+// 沉浸式编辑保存（原 viewer 内编辑的逻辑）
+const onEditorSave = async (payload) => {
+  saving.value = true
+  try {
+    // 标题有变更时先改标题（同名冲突会在此报错并中止）
+    if (payload.docTitle !== composeDoc.value?.docTitle) {
+      const titleRes = await docApi.updateTitle(payload.docId, payload.docTitle)
+      if (titleRes.data.code !== 200) {
+        showMessage(titleRes.data.message || '标题修改失败', 'error')
+        return
+      }
+    }
+
+    const tagIds = payload.tagIds
+    await docApi.updateTags(payload.docId, tagIds)
+
+    const res = await docApi.updateContent(payload.docId, payload.docContent)
+    if (res.data.code === 200) {
+      showMessage('保存成功')
+      composeOpen.value = false
+      composeDoc.value = null
+      fetchData()
+    } else {
+      showMessage(res.data.message || '保存失败', 'error')
+    }
+  } catch (e) {
+    console.error('保存失败:', e)
+    showMessage('保存失败: ' + (e.response?.data?.message || e.message), 'error')
+  } finally {
+    saving.value = false
+  }
+}
 
 const canSubmit = computed(() => {
   if (isEdit.value) return true
-  if (createTab.value === 'drop') return !!selectedFile.value && !readingFile.value
-  return !!composeForm.title.trim() && !!composeForm.content.trim()
+  return !!selectedFile.value && !readingFile.value
 })
 
 const snackbar = reactive({
@@ -512,20 +474,15 @@ const fetchTags = async () => {
 const viewDoc = async (item) => {
   viewItem.value = item
   viewDialog.value = true
-  isEditing.value = false
   viewLoading.value = true
   viewError.value = ''
   renderedContent.value = ''
-  editContent.value = ''
-  editTags.value = []
-  
+
   try {
     const res = await docApi.getById(item.docId)
     if (res.data.code === 200) {
       const doc = res.data.data
       viewItem.value = doc
-      editContent.value = doc.docContent || ''
-      editTags.value = doc.tags || []
       renderedContent.value = md.render(doc.docContent || '（文档内容为空）')
     } else {
       viewError.value = res.data.message || '获取文档内容失败'
@@ -538,42 +495,12 @@ const viewDoc = async (item) => {
   }
 }
 
-const enableEdit = async () => {
+// 从 viewer 进入沉浸式编辑
+const openImmersiveEdit = async (doc) => {
   await fetchTags()
-  isEditing.value = true
-}
-
-const cancelEdit = () => {
-  isEditing.value = false
-  editContent.value = viewItem.value?.docContent || ''
-  editTags.value = viewItem.value?.tags || []
-}
-
-const saveContent = async () => {
-  saving.value = true
-  try {
-    const tagIds = editTags.value
-      .map(tag => (typeof tag === 'object' ? tag.tagId : tag))
-    
-    await docApi.updateTags(viewItem.value.docId, tagIds)
-    
-    const res = await docApi.updateContent(viewItem.value.docId, editContent.value)
-    if (res.data.code === 200) {
-      showMessage('保存成功')
-      viewItem.value.docContent = editContent.value
-      viewItem.value.tags = editTags.value
-      renderedContent.value = md.render(editContent.value)
-      isEditing.value = false
-      fetchData()
-    } else {
-      showMessage(res.data.message || '保存失败', 'error')
-    }
-  } catch (e) {
-    console.error('保存失败:', e)
-    showMessage('保存失败: ' + (e.response?.data?.message || e.message), 'error')
-  } finally {
-    saving.value = false
-  }
+  composeDoc.value = doc
+  viewDialog.value = false
+  composeOpen.value = true
 }
 
 const quickExport = async (item) => {
@@ -620,11 +547,13 @@ const openDialog = async (item = null) => {
     selectedFile.value = null
     droppedContent.value = ''
     readingFile.value = false
-    composeMode.value = 'edit'
-    composeForm.title = ''
-    composeForm.content = ''
   }
   dialog.value = true
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  return value.slice(0, 19).replace('T', ' ')
 }
 
 const formatSize = (size) => {
@@ -697,18 +626,12 @@ const save = async () => {
     let res
     if (isEdit.value) {
       res = await docApi.updateTags(formData.docId, tagIds)
-    } else if (createTab.value === 'drop') {
-      res = await docApi.create(selectedFile.value.name, droppedContent.value, tagIds)
     } else {
-      res = await docApi.create(composeForm.title, composeForm.content, tagIds)
+      res = await docApi.create(selectedFile.value.name, droppedContent.value, tagIds)
     }
 
     if (res.data.code === 200) {
-      if (isEdit.value) {
-        showMessage('更新成功')
-      } else {
-        showMessage(createTab.value === 'drop' ? '上传成功' : '创建成功')
-      }
+      showMessage(isEdit.value ? '更新成功' : '上传成功')
       dialog.value = false
       fetchData()
     } else {
@@ -811,38 +734,6 @@ onMounted(() => {
   font-size: 13px;
   color: #90a4ae;
 }
-.compose-editor {
-  border: 1px solid #d5d9e0;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #fff;
-}
-.compose-editor__bar {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  background: #fafbfc;
-  border-bottom: 1px solid #e8ebef;
-}
-.compose-textarea {
-  display: block;
-  width: 100%;
-  height: 260px;
-  padding: 16px;
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 14px;
-  line-height: 1.7;
-  color: #333;
-  border: none;
-  outline: none;
-  resize: vertical;
-  background: transparent;
-}
-.compose-preview {
-  height: 260px;
-  padding: 16px 20px;
-  overflow-y: auto;
-}
 .doc-viewer-card {
   display: flex;
   flex-direction: column;
@@ -856,9 +747,6 @@ onMounted(() => {
   max-width: 70%;
   margin: 0 auto;
   width: 100%;
-}
-.edit-mode {
-  padding: 0;
 }
 .markdown-content {
   font-size: 15px;
@@ -931,22 +819,5 @@ onMounted(() => {
 }
 .markdown-content :deep(th) {
   background: #f6f8fa;
-}
-.markdown-editor {
-  width: 100%;
-  height: calc(100vh - 350px);
-  padding: 20px;
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 14px;
-  line-height: 1.6;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  background: white;
-  resize: none;
-  outline: none;
-}
-.markdown-editor:focus {
-  border-color: #1976d2;
-  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
 }
 </style>

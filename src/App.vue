@@ -1,7 +1,7 @@
 <template>
   <v-app>
     <v-navigation-drawer v-model="drawer" app permanent width="260">
-      <v-list-item class="pa-4" title="文档聚合系统" subtitle="位图标签关联"></v-list-item>
+      <v-list-item class="pa-4" title="欢迎使用哦～"></v-list-item>
       <v-divider></v-divider>
       <v-list density="compact" nav>
         <v-list-subheader>知识库</v-list-subheader>
