@@ -1,9 +1,5 @@
 <template>
   <div class="tag-view">
-    <div class="header">
-      <h1 class="text-h4 mb-4">标签管理</h1>
-      <p class="text-body-1 text-grey mb-4">管理文档标签，便于分类和检索</p>
-    </div>
 
     <v-card>
       <v-card-title class="d-flex align-center flex-wrap gap-2">

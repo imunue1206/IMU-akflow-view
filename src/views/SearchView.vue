@@ -1,24 +1,47 @@
 <template>
   <div class="search-view">
     <div class="content">
-      <div class="header">
-        <h1 class="text-h4 mb-2 font-weight-bold">
-          智能搜索
-        </h1>
-        <p class="text-body-1 text-grey mb-4">通过标签组合智能检索文档，了解文档与标签的匹配程度</p>
-      </div>
 
       <v-card class="mb-6">
         <v-card-text class="pa-5">
-          <v-alert type="info" variant="tonal" class="mb-4">
-            <template v-slot:title>💡 温馨提示</template>
-            <ul class="mt-1" style="padding-left: 20px; line-height: 1.8;">
-              <li>选择多个标签进行组合检索，系统会按匹配度智能排序</li>
-              <li><strong class="text-primary">双击直搜</strong>：双击任意标签，立即按当前组合发起搜索，无需再点按钮</li>
-              <li><strong class="text-success">精确匹配</strong>：文档包含所有选中的标签</li>
-              <li><strong class="text-primary">相关度</strong>：文档标签与选中标签的匹配比例，比例越高越相关</li>
-            </ul>
-          </v-alert>
+          <!-- 新手提示：首次自动展开 3s 后收为一行；点一行展开（手动展开不自动关闭）；「不再提醒」= 以后进页面不自动展开，一行常驻可随时点开 -->
+          <div class="guide-box mb-4">
+            <div class="guide-bar" @click="toggleGuide">
+              <v-icon size="small" color="primary">mdi-lightbulb-on-outline</v-icon>
+              <span class="text-body-2 text-grey-darken-1">新手提示：双击标签直接搜索 · 点击展开详情</span>
+              <v-icon size="small" class="guide-bar__arrow">
+                {{ guideState === 'expanded' ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
+              </v-icon>
+            </div>
+            <div class="guide-collapse" :class="{ 'guide-collapse--open': guideState === 'expanded' }">
+              <div class="guide-collapse__inner">
+                <v-alert
+                  :model-value="true"
+                  type="info"
+                  variant="tonal"
+                  closable
+                  class="mb-0"
+                  @click:close="dismissForever(true)"
+                >
+                <template v-slot:title>💡 温馨提示</template>
+                <ul class="mt-1" style="padding-left: 20px; line-height: 1.8;">
+                  <li>选择多个标签进行组合检索，系统会按匹配度智能排序</li>
+                  <li><strong class="text-primary">双击直搜</strong>：双击任意标签，立即按当前组合发起搜索，无需再点按钮</li>
+                  <li><strong class="text-success">精确匹配</strong>：文档包含所有选中的标签</li>
+                  <li><strong class="text-primary">相关度</strong>：文档标签与选中标签的匹配比例，比例越高越相关</li>
+                </ul>
+                <v-checkbox
+                  v-model="neverRemind"
+                  density="compact"
+                  hide-details
+                  label="不再提醒"
+                  class="mt-2"
+                  @update:model-value="dismissForever"
+                ></v-checkbox>
+                </v-alert>
+              </div>
+            </div>
+          </div>
 
           <div class="tag-selection-area">
             <div class="d-flex align-center flex-wrap gap-4 mb-3">
@@ -37,29 +60,46 @@
               </v-btn>
             </div>
 
+            <v-text-field
+              v-model="tagKeyword"
+              density="compact"
+              variant="outlined"
+              hide-details
+              clearable
+              placeholder="模糊搜索标签，快速定位…"
+              prepend-inner-icon="mdi-magnify"
+              class="mb-3"
+              style="max-width: 340px"
+            ></v-text-field>
+
             <div class="tags-container">
-              <v-tooltip
-                v-for="tag in availableTags"
-                :key="tag.tagId"
-                location="top"
-                text="单击选中 / 取消 · 双击直接搜索"
-              >
-                <template v-slot:activator="{ props: tooltipProps }">
-                  <v-chip
-                    v-bind="tooltipProps"
-                    :color="isSelected(tag.tagId) ? 'primary' : 'default'"
-                    :variant="isSelected(tag.tagId) ? 'flat' : 'outlined'"
-                    size="large"
-                    class="tag-chip mr-2 mb-2"
-                    :class="{ 'dbl-searching': dblClickTagId === tag.tagId }"
-                    @click="toggleTag(tag)"
-                    @dblclick="handleTagDblClick(tag)"
-                  >
-                    <v-icon start size="small">{{ isSelected(tag.tagId) ? 'mdi-check-circle' : 'mdi-tag' }}</v-icon>
-                    {{ tag.tagName }}
-                  </v-chip>
-                </template>
-              </v-tooltip>
+              <template v-if="filteredTags.length">
+                <v-tooltip
+                  v-for="tag in filteredTags"
+                  :key="tag.tagId"
+                  location="top"
+                  text="单击选中 / 取消 · 双击直接搜索"
+                >
+                  <template v-slot:activator="{ props: tooltipProps }">
+                    <v-chip
+                      v-bind="tooltipProps"
+                      :color="isSelected(tag.tagId) ? 'primary' : 'default'"
+                      :variant="isSelected(tag.tagId) ? 'flat' : 'outlined'"
+                      size="large"
+                      class="tag-chip mr-2 mb-2"
+                      :class="{ 'dbl-searching': dblClickTagId === tag.tagId }"
+                      @click="toggleTag(tag)"
+                      @dblclick="handleTagDblClick(tag)"
+                    >
+                      <v-icon start size="small">{{ isSelected(tag.tagId) ? 'mdi-check-circle' : 'mdi-tag' }}</v-icon>
+                      {{ tag.tagName }}
+                    </v-chip>
+                  </template>
+                </v-tooltip>
+              </template>
+              <div v-else class="text-body-2 text-grey py-4">
+                {{ tagKeyword ? `没有匹配「${tagKeyword}」的标签` : '暂无标签' }}
+              </div>
             </div>
 
             <v-expand-transition>
@@ -362,7 +402,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { docApi, tagApi } from '@/api'
 
@@ -383,6 +423,17 @@ const total = ref(0)
 const items = ref([])
 const availableTags = ref([])
 const selectedTags = ref([])
+const tagKeyword = ref('')
+
+// 标签模糊过滤：匹配名称或描述（不区分大小写）
+const filteredTags = computed(() => {
+  const kw = (tagKeyword.value || '').trim().toLowerCase()
+  if (!kw) return availableTags.value
+  return availableTags.value.filter(t =>
+    (t.tagName || '').toLowerCase().includes(kw) ||
+    (t.tagDesc || '').toLowerCase().includes(kw)
+  )
+})
 const viewItem = ref(null)
 const renderedContent = ref('')
 
@@ -396,6 +447,30 @@ const showMessage = (text, color = 'success') => {
   snackbar.text = text
   snackbar.color = color
   snackbar.show = true
+}
+
+// 新手提示：首次自动展开 3s 后收为一行；手动展开不自动关闭
+// 「不再提醒」= 以后进页面不自动展开（一行常驻，仍可手动点开），取消勾选则恢复自动展开
+const GUIDE_KEY = 'akflow_search_guide_never'
+const guideState = ref('collapsed') // expanded | collapsed
+const neverRemind = ref(false)
+let guideTimer = null
+
+const toggleGuide = () => {
+  clearTimeout(guideTimer)
+  guideState.value = guideState.value === 'expanded' ? 'collapsed' : 'expanded'
+}
+
+// 收起并记住偏好（点 X 与勾选「不再提醒」走同一逻辑）；取消勾选则恢复自动展开
+const dismissForever = (v) => {
+  neverRemind.value = v
+  if (v) {
+    localStorage.setItem(GUIDE_KEY, 'never')
+    clearTimeout(guideTimer)
+    guideState.value = 'collapsed'
+  } else {
+    localStorage.removeItem(GUIDE_KEY)
+  }
 }
 
 const isSelected = (tagId) => {
@@ -461,6 +536,7 @@ watch(resultPanel, (v) => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onGlobalEsc)
+  clearTimeout(guideTimer)
 })
 
 const fetchTags = async () => {
@@ -550,6 +626,14 @@ const exportDoc = async () => {
 
 onMounted(() => {
   fetchTags()
+
+  // 新手提示初始化：勾过「不再提醒」则不自动展开（保持一行）；否则首次展开，3s 后自动收为一行
+  if (localStorage.getItem(GUIDE_KEY) !== 'never') {
+    guideState.value = 'expanded'
+    guideTimer = setTimeout(() => {
+      guideState.value = 'collapsed'
+    }, 3000)
+  }
 })
 </script>
 
@@ -566,6 +650,40 @@ onMounted(() => {
 }
 .cursor-pointer {
   cursor: pointer;
+}
+/* 新手提示常驻一行 */
+.guide-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(25, 118, 210, 0.06);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.18s ease;
+}
+.guide-bar:hover {
+  background: rgba(25, 118, 210, 0.12);
+}
+.guide-bar__arrow {
+  margin-left: auto;
+}
+/* 提示展开/收起：CSS grid-rows 过渡 + 淡入淡出，单段式顺滑（间距常驻，避免两段式观感） */
+.guide-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-top: 8px;
+  transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease;
+}
+.guide-collapse--open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.guide-collapse__inner {
+  min-height: 0;
+  overflow: hidden;
 }
 .tag-chip {
   user-select: none;

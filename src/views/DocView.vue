@@ -1,9 +1,6 @@
 <template>
   <div class="doc-view">
-    <div class="header">
-      <h1 class="text-h4 mb-2">文档管理</h1>
-      <p class="text-body-1 text-grey mb-4">管理知识文档，支持标签分类和全文检索</p>
-    </div>
+
 
     <v-card>
       <v-card-title class="d-flex align-center flex-wrap gap-2">

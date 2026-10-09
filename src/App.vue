@@ -1,10 +1,7 @@
 <template>
   <v-app>
     <v-navigation-drawer v-model="drawer" app permanent width="260">
-      <v-list-item class="pa-4" title="欢迎使用哦～"></v-list-item>
-      <v-divider></v-divider>
       <v-list density="compact" nav>
-        <v-list-subheader>知识库</v-list-subheader>
         <v-list-item
           v-for="item in knowledgeItems"
           :key="item.value"
@@ -21,8 +18,6 @@
       <v-app-bar-nav-icon @click="drawer = !drawer"></v-app-bar-nav-icon>
       <v-app-bar-title>{{ pageTitle }}</v-app-bar-title>
       <v-spacer></v-spacer>
-      <v-btn icon="mdi-bell"></v-btn>
-      <v-btn icon="mdi-account-circle"></v-btn>
     </v-app-bar>
 
     <v-main>
