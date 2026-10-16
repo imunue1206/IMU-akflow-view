@@ -641,10 +641,6 @@ onMounted(() => {
 .search-view {
   padding: 24px;
 }
-.content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
 .header {
   margin-bottom: 24px;
 }
