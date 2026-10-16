@@ -26,6 +26,7 @@
 
     <!-- 右上角旋钮：触摸展开，旋转选择 -->
     <button
+      ref="knobRef"
       class="fan-knob"
       :class="{ 'fan-knob--open': open }"
       @pointerdown.prevent="onKnobDown"
@@ -55,16 +56,20 @@ const router = useRouter()
 const open = ref(false)
 const activeIndex = ref(-1)
 const knobAngle = ref(0)
+const knobRef = ref(null)
 
-// 扇形几何：圆心 = 旋钮中心（屏幕右上角），角度为屏幕坐标系（0°右 / 90°下 / 180°左）
+// 扇形几何：圆心 = 旋钮实际中心（CSS 已按刘海屏安全区偏移），角度为屏幕坐标系（0°右 / 90°下 / 180°左）
 const ANGLES = [105, 140, 175]
 const RADIUS = 128
 const KNOB = 52          // 旋钮直径
-const OFFSET = 16        // 距屏幕边缘
-const center = () => ({
-  x: window.innerWidth - OFFSET - KNOB / 2,
-  y: OFFSET + KNOB / 2
-})
+const OFFSET = 16        // 距屏幕边缘（回退值）
+const center = () => {
+  const r = knobRef.value?.getBoundingClientRect()
+  if (!r || !r.width) {
+    return { x: window.innerWidth - OFFSET - KNOB / 2, y: OFFSET + KNOB / 2 }
+  }
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+}
 
 let dragging = false
 let rotated = false
@@ -252,8 +257,9 @@ onUnmounted(() => {
 /* 右上角旋钮 */
 .fan-knob {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  /* 刘海屏：避开状态栏与右侧圆角 */
+  top: calc(16px + env(safe-area-inset-top));
+  right: calc(16px + env(safe-area-inset-right));
   width: 52px;
   height: 52px;
   border-radius: 50%;

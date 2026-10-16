@@ -64,4 +64,25 @@ const pageTitle = computed(() => {
 html, body {
   overflow-y: auto !important;
 }
+
+/* ===== 手机浏览器适配（<960px 与旋钮断点一致） ===== */
+html, body {
+  overflow-x: hidden; /* 表格/长内容防横向晃动 */
+}
+@media (max-width: 959.98px) {
+  /* 容器 16px + 视图 24px 叠加留白在手机上太奢侈，收窄 */
+  .v-main > .v-container {
+    padding: 10px !important; /* 对抗 pa-4 utility 的 !important */
+  }
+  .v-main div.search-view,
+  .v-main div.doc-view,
+  .v-main div.tag-view {
+    padding: 12px;
+  }
+  /* iOS Safari：输入框字号 <16px 时聚焦会整页放大 */
+  input,
+  textarea {
+    font-size: 16px;
+  }
+}
 </style>

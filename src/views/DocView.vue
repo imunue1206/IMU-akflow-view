@@ -12,7 +12,7 @@
           density="compact"
           hide-details
           style="max-width: 300px"
-          @keyup.enter="fetchData"
+          @keyup.enter="onSearch"
         ></v-text-field>
         <v-spacer></v-spacer>
         <v-btn color="primary" prepend-icon="mdi-plus" @click="openDialog()">
@@ -24,13 +24,17 @@
         :headers="headers"
         :items="items"
         :loading="loading"
-        :items-length="total"
+        :items-per-page="-1"
+        hide-default-footer
         @update:options="fetchData"
       >
         <template v-slot:item.docTitle="{ item }">
-          <div class="d-flex align-center cursor-pointer" @click="viewDoc(item)">
-            <v-icon class="mr-2" color="primary">mdi-file-document</v-icon>
-            <span class="font-weight-medium text-primary">{{ item.docTitle }}</span>
+          <div>
+            <div class="d-flex align-center cursor-pointer" @click="viewDoc(item)">
+              <v-icon class="mr-2" color="primary">mdi-file-document</v-icon>
+              <span class="font-weight-medium text-primary">{{ item.docTitle }}</span>
+            </div>
+            <div class="doc-title-cell__time">{{ formatDateTime(item.createTime) }}</div>
           </div>
         </template>
         <template v-slot:item.tags="{ item }">
@@ -62,6 +66,19 @@
           </v-btn>
         </template>
       </v-data-table>
+
+      <!-- 服务端分页：v-data-table 内置分页会对服务端返回的当前页数据二次切片导致翻页失效，改为自管 -->
+      <div class="d-flex align-center justify-space-between flex-wrap ga-2 pa-3">
+        <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
+        <v-pagination
+          v-model="page"
+          :length="Math.max(1, Math.ceil(total / PAGE_SIZE))"
+          :total-visible="7"
+          density="comfortable"
+          @update:model-value="fetchData"
+        ></v-pagination>
+        <span class="text-caption text-medium-emphasis">每页 {{ PAGE_SIZE }} 条</span>
+      </div>
     </v-card>
 
     <v-dialog v-model="dialog" max-width="820" persistent>
@@ -304,6 +321,8 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { useBackGuard } from '@/composables/backGuard'
+import { useDisplay } from 'vuetify'
 import MarkdownIt from 'markdown-it'
 import { docApi, tagApi } from '@/api'
 import ComposeEditor from '@/components/ComposeEditor.vue'
@@ -318,6 +337,21 @@ const search = ref('')
 const loading = ref(false)
 const dialog = ref(false)
 const viewDialog = ref(false)
+
+// 移动端系统返回手势：阅读器开着时返回先关阅读器，不退路由
+useBackGuard(viewDialog, () => { viewDialog.value = false })
+
+// 关闭阅读器后清残留状态（延迟到关闭动画结束）：避免下次打开前的间隙闪现上一篇文档
+watch(viewDialog, (v) => {
+  if (v) return
+  setTimeout(() => {
+    if (!viewDialog.value) {
+      viewItem.value = null
+      renderedContent.value = ''
+      viewError.value = ''
+    }
+  }, 350)
+})
 const deleteDialog = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
@@ -418,12 +452,19 @@ const snackbar = reactive({
   color: 'success'
 })
 
-const headers = [
-  { title: '文档', key: 'docTitle', width: '250px' },
-  { title: '标签', key: 'tags', width: '200px' },
-  { title: '创建时间', key: 'createTime', width: '180px' },
-  { title: '操作', key: 'actions', sortable: false, width: '150px' }
-]
+const { mdAndUp } = useDisplay()
+
+// PC 端时间独立成列；移动端收进文档名下方小字，避免横向滚动
+const headers = computed(() => {
+  const all = [
+    { title: '文档', key: 'docTitle', width: '250px' },
+    { title: '标签', key: 'tags', width: '200px' },
+    { title: '创建时间', key: 'createTime', width: '180px' },
+    { title: '操作', key: 'actions', sortable: false, width: '150px' }
+  ]
+  if (mdAndUp.value) return all
+  return all.filter(h => h.key !== 'createTime')
+})
 
 const formData = reactive({
   docId: null,
@@ -437,15 +478,24 @@ const showMessage = (text, color = 'success') => {
   snackbar.show = true
 }
 
-const fetchData = async (options = { page: 1, itemsPerPage: 10 }) => {
+const PAGE_SIZE = 10
+const page = ref(1)
+
+// 服务端分页：targetPage 仅翻页时显式传入，其余刷新沿用当前页；@update:options 与搜索事件传对象/事件时不匹配 number 走当前页
+const fetchData = async (targetPage) => {
   loading.value = true
   try {
-    const page = options.page || 1
-    const pageSize = options.itemsPerPage || 10
-    const res = await docApi.getPage(page, pageSize, search.value)
+    const p = typeof targetPage === 'number' ? targetPage : page.value
+    const res = await docApi.getPage(p, PAGE_SIZE, search.value)
     if (res.data.code === 200) {
       items.value = res.data.data.list || []
       total.value = res.data.data.total || 0
+      page.value = p
+      // 当前页数据被删空时自动回退一页
+      if (!items.value.length && page.value > 1) {
+        page.value -= 1
+        return fetchData()
+      }
     } else {
       showMessage(res.data.message || '获取文档失败', 'error')
     }
@@ -455,6 +505,11 @@ const fetchData = async (options = { page: 1, itemsPerPage: 10 }) => {
   } finally {
     loading.value = false
   }
+}
+
+const onSearch = () => {
+  page.value = 1
+  fetchData()
 }
 
 const fetchTags = async () => {
@@ -675,6 +730,20 @@ onMounted(() => {
 .doc-view {
   padding: 24px;
 }
+/* 创建时间：移动端收进文档名下方（PC 走独立列） */
+.doc-title-cell__time {
+  display: none;
+}
+@media (max-width: 959.98px) {
+  .doc-title-cell__time {
+    display: block;
+    margin-top: 2px;
+    padding-left: 30px; /* 与标题文字对齐（icon 20px + 间距 8px） */
+    font-size: 12px;
+    line-height: 1.2;
+    color: #90a4ae;
+  }
+}
 .header {
   margin-bottom: 24px;
 }
@@ -744,6 +813,13 @@ onMounted(() => {
   max-width: 70%;
   margin: 0 auto;
   width: 100%;
+}
+/* 移动端阅读：去掉 PC 的居中限宽，正文占满屏宽 */
+@media (max-width: 959.98px) {
+  .doc-container {
+    max-width: 100%;
+    padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+  }
 }
 .markdown-content {
   font-size: 15px;

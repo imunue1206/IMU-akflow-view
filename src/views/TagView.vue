@@ -11,7 +11,7 @@
           density="compact"
           hide-details
           style="max-width: 300px"
-          @keyup.enter="fetchData"
+          @keyup.enter="onSearch"
         ></v-text-field>
         <v-spacer></v-spacer>
         <v-btn color="primary" prepend-icon="mdi-plus" @click="openDialog()">
@@ -23,13 +23,24 @@
         :headers="headers"
         :items="items"
         :loading="loading"
-        :items-length="total"
+        :items-per-page="-1"
+        hide-default-footer
         @update:options="fetchData"
       >
         <template v-slot:item.tagName="{ item }">
-          <v-chip color="primary" variant="tonal">
-            {{ item.tagName }}
-          </v-chip>
+          <div class="tag-name-cell">
+            <v-chip color="primary" variant="tonal">
+              {{ item.tagName }}
+            </v-chip>
+            <div
+              v-if="item.tagDesc"
+              class="tag-name-cell__desc"
+              :class="{ 'tag-name-cell__desc--open': isDescExpanded(item.tagId) }"
+              :title="item.tagDesc"
+              @click.stop="toggleDesc(item.tagId)"
+            >{{ item.tagDesc }}</div>
+            <div class="tag-name-cell__time">{{ formatDateTime(item.createTime) }}</div>
+          </div>
         </template>
         <template v-slot:item.docCount="{ item }">
           <v-btn variant="text" size="small" @click="showTagDocs(item)">
@@ -45,6 +56,19 @@
           </v-btn>
         </template>
       </v-data-table>
+
+      <!-- 服务端分页：v-data-table 内置分页会对服务端返回的当前页数据二次切片导致翻页失效，改为自管 -->
+      <div class="d-flex align-center justify-space-between flex-wrap ga-2 pa-3">
+        <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
+        <v-pagination
+          v-model="page"
+          :length="Math.max(1, Math.ceil(total / PAGE_SIZE))"
+          :total-visible="7"
+          density="comfortable"
+          @update:model-value="fetchData"
+        ></v-pagination>
+        <span class="text-caption text-medium-emphasis">每页 {{ PAGE_SIZE }} 条</span>
+      </div>
     </v-card>
 
     <v-dialog v-model="dialog" max-width="500" persistent>
@@ -130,7 +154,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useDisplay } from 'vuetify'
 import { tagApi } from '@/api'
 
 const search = ref('')
@@ -161,13 +186,35 @@ const showMessage = (text, color = 'success') => {
   snackbar.show = true
 }
 
-const headers = [
-  { title: '标签名称', key: 'tagName', width: '150px' },
-  { title: '描述', key: 'tagDesc' },
-  { title: '文档数', key: 'docCount', width: '120px' },
-  { title: '创建时间', key: 'createTime', width: '180px' },
-  { title: '操作', key: 'actions', sortable: false, width: '120px' }
-]
+const { mdAndUp } = useDisplay()
+
+// PC 端描述/时间独立成列；移动端收进名称单元格小字，避免横向滚动
+const headers = computed(() => {
+  const all = [
+    { title: '标签名称', key: 'tagName', width: '230px' },
+    { title: '描述', key: 'tagDesc' },
+    { title: '文档数', key: 'docCount', width: '110px' },
+    { title: '创建时间', key: 'createTime', width: '180px' },
+    { title: '操作', key: 'actions', sortable: false, width: '110px' }
+  ]
+  if (mdAndUp.value) return all
+  return all.filter(h => !['tagDesc', 'createTime'].includes(h.key))
+})
+
+// 移动端描述小字：点击展开/收起全文
+const descExpanded = ref([])
+const toggleDesc = (id) => {
+  const i = descExpanded.value.indexOf(id)
+  if (i >= 0) descExpanded.value.splice(i, 1)
+  else descExpanded.value.push(id)
+}
+const isDescExpanded = (id) => descExpanded.value.includes(id)
+
+// 创建时间格式化：'YYYY-MM-DD HH:MM:SS'，纯字符串切片避免时区问题
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  return value.slice(0, 19).replace('T', ' ')
+}
 
 const formData = reactive({
   tagId: null,
@@ -175,15 +222,24 @@ const formData = reactive({
   tagDesc: ''
 })
 
-const fetchData = async (options = { page: 1, itemsPerPage: 10 }) => {
+const PAGE_SIZE = 10
+const page = ref(1)
+
+// 服务端分页：targetPage 仅翻页时显式传入，其余刷新沿用当前页；@update:options 与搜索事件传对象/事件时不匹配 number 走当前页
+const fetchData = async (targetPage) => {
   loading.value = true
   try {
-    const page = options.page || 1
-    const pageSize = options.itemsPerPage || 10
-    const res = await tagApi.getPage(page, pageSize, search.value)
+    const p = typeof targetPage === 'number' ? targetPage : page.value
+    const res = await tagApi.getPage(p, PAGE_SIZE, search.value)
     if (res.data.code === 200) {
       items.value = res.data.data.list || []
       total.value = res.data.data.total || 0
+      page.value = p
+      // 当前页数据被删空时自动回退一页
+      if (!items.value.length && page.value > 1) {
+        page.value -= 1
+        return fetchData()
+      }
     } else {
       showMessage(res.data.message || '获取标签失败', 'error')
     }
@@ -193,6 +249,11 @@ const fetchData = async (options = { page: 1, itemsPerPage: 10 }) => {
   } finally {
     loading.value = false
   }
+}
+
+const onSearch = () => {
+  page.value = 1
+  fetchData()
 }
 
 const openDialog = (item = null) => {
@@ -293,5 +354,37 @@ onMounted(() => {
 }
 .header {
   margin-bottom: 24px;
+}
+/* 行内元信息（描述/时间）仅移动端显示，PC 走独立列 */
+.tag-name-cell__time,
+.tag-name-cell__desc {
+  display: none;
+}
+@media (max-width: 959.98px) {
+  .tag-name-cell__time {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.2;
+    color: #90a4ae;
+  }
+  /* 描述小字：单行截断，点击展开全文 */
+  .tag-name-cell__desc {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    overflow: hidden;
+    margin-top: 3px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #607d8b;
+    cursor: pointer;
+  }
+  .tag-name-cell__desc--open {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+  }
 }
 </style>

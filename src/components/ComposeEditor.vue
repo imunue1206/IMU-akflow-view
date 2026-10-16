@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="ce-fade">
-      <div v-if="modelValue" class="ce-root" @keydown.esc="onEscape">
+      <div v-if="modelValue" ref="rootRef" class="ce-root" @keydown.esc="onEscape">
         <div class="ce-backdrop" @click="requestClose"></div>
 
         <div class="ce-panel">
@@ -86,7 +86,7 @@
               class="ce-footer__tags"
             ></v-combobox>
             <v-spacer></v-spacer>
-            <span class="text-caption text-grey mr-3">{{ content.length }} 字符</span>
+            <span class="text-caption text-grey mr-3 ce-footer__count">{{ content.length }} 字符</span>
             <span v-if="draftSavedAtText" class="ce-draft__hint mr-3">
               <v-icon size="12">mdi-check-circle-outline</v-icon>
               草稿已暂存 {{ draftSavedAtText }}
@@ -184,7 +184,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { backGuardOpen, backGuardClose } from '@/composables/backGuard'
 import MarkdownIt from 'markdown-it'
 
 const props = defineProps({
@@ -348,10 +349,13 @@ watch(
       }
       document.body.style.overflow = 'hidden'
       nextTick(() => textareaRef.value?.focus())
+      // 移动端系统返回手势：编辑器开着时返回先收确认弹窗或退出编辑器，不退路由
+      backGuardOpen(closeViaBack)
     } else {
       document.body.style.overflow = ''
       clearTimeout(draftTimer)
       draftBanner.value = null
+      backGuardClose(closeViaBack)
       if (submitted) {
         // 保存/创建成功后由父组件关闭 → 草稿已落库，清除缓存
         clearDraft()
@@ -364,9 +368,31 @@ watch(
   }
 )
 
+// 移动端软键盘弹出时把容器压到可视区内，避免底部按钮被键盘遮挡
+const rootRef = ref(null)
+let vvHandler = null
+onMounted(() => {
+  const vv = window.visualViewport
+  if (!vv) return
+  vvHandler = () => {
+    const el = rootRef.value
+    if (!el) return
+    el.style.top = `${vv.offsetTop}px`
+    el.style.bottom = 'auto'
+    el.style.height = `${vv.height}px`
+  }
+  vv.addEventListener('resize', vvHandler)
+  vv.addEventListener('scroll', vvHandler)
+})
+
 onUnmounted(() => {
   document.body.style.overflow = ''
   clearTimeout(draftTimer)
+  const vv = window.visualViewport
+  if (vv && vvHandler) {
+    vv.removeEventListener('resize', vvHandler)
+    vv.removeEventListener('scroll', vvHandler)
+  }
 })
 
 const requestClose = () => {
@@ -379,6 +405,15 @@ const requestClose = () => {
     return
   }
   emit('update:modelValue', false)
+}
+
+// 系统返回手势的关闭语义：确认弹窗开着先关确认；否则视为放弃退出（草稿保留）
+const closeViaBack = () => {
+  if (confirming.value) {
+    confirming.value = false
+    return
+  }
+  forceClose()
 }
 
 const forceClose = () => {
@@ -690,6 +725,37 @@ const syncScroll = (e) => {
   }
   .ce-compare__col:last-child {
     border-bottom: none;
+  }
+
+  /* 手机浏览器：header/footer 收窄换行，分屏改上下堆叠，底部避开手势条 */
+  .ce-header {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 14px 10px;
+  }
+  .ce-body {
+    margin: 0 14px;
+  }
+  .ce-body--split {
+    flex-direction: column;
+  }
+  .ce-body--split .ce-body__textarea {
+    border-right: none;
+    border-bottom: 1px solid rgba(226, 232, 238, 0.95);
+  }
+  /* footer 单行：选择标签与确认按钮同行，字符数/草稿提示让位隐藏 */
+  .ce-footer {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 10px 14px calc(12px + env(safe-area-inset-bottom));
+  }
+  .ce-footer__tags {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .ce-footer__count,
+  .ce-footer .ce-draft__hint {
+    display: none;
   }
 }
 

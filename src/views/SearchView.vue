@@ -148,11 +148,15 @@
           </v-card-title>
 
           <v-card-text class="pa-5">
-            <div v-if="loading" class="d-flex justify-center align-center py-8">
+            <!-- 首次搜索整区 spinner；翻页时用遮罩覆盖，保持分页器位置稳定不跳动 -->
+            <div v-if="loading && !items.length" class="d-flex justify-center align-center py-8">
               <v-progress-circular indeterminate color="primary" size="48"></v-progress-circular>
             </div>
 
-            <div v-else-if="items.length">
+            <div v-else-if="items.length" style="position: relative">
+              <div v-if="loading" class="search-loading-mask">
+                <v-progress-circular indeterminate color="primary" size="36"></v-progress-circular>
+              </div>
               <v-table>
                 <thead>
                   <tr>
@@ -405,6 +409,7 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { docApi, tagApi } from '@/api'
+import { useBackGuard } from '@/composables/backGuard'
 
 const md = new MarkdownIt({
   html: true,
@@ -415,6 +420,21 @@ const md = new MarkdownIt({
 const loading = ref(false)
 const searched = ref(false)
 const viewDialog = ref(false)
+
+// 移动端系统返回手势：弹层开着时返回先关弹层（阅读器 → 结果弹层 → 路由），不退路由
+useBackGuard(viewDialog, () => { viewDialog.value = false })
+
+// 关闭阅读器后清残留状态（延迟到关闭动画结束）：避免下次打开前的间隙闪现上一篇文档
+watch(viewDialog, (v) => {
+  if (v) return
+  setTimeout(() => {
+    if (!viewDialog.value) {
+      viewItem.value = null
+      renderedContent.value = ''
+      viewError.value = ''
+    }
+  }, 350)
+})
 const viewLoading = ref(false)
 const viewError = ref('')
 const page = ref(1)
@@ -492,6 +512,7 @@ const removeTag = (tagId) => {
 // 双击直搜：确保该标签选中后立即搜索，并播放弹跳动画 + 毛玻璃弹层展示结果
 const dblClickTagId = ref(null)
 const resultPanel = ref(false)
+useBackGuard(resultPanel, () => { resultPanel.value = false })
 
 const handleTagDblClick = (tag) => {
   if (!isSelected(tag.tagId)) {
@@ -558,8 +579,9 @@ const search = async (options = {}) => {
   
   loading.value = true
   searched.value = true
+  const prevPage = page.value
   page.value = options.page || 1
-  
+
   try {
     const tagIds = selectedTags.value.map(t => t.tagId)
     const res = await docApi.searchByTags(tagIds, page.value, pageSize.value)
@@ -570,6 +592,7 @@ const search = async (options = {}) => {
       showMessage(res.data.message || '搜索失败', 'error')
     }
   } catch (e) {
+    page.value = prevPage // 请求失败回滚页码，与已展示的旧页数据保持一致
     console.error('搜索失败:', e)
     showMessage('搜索失败', 'error')
   } finally {
@@ -640,6 +663,24 @@ onMounted(() => {
 <style scoped>
 .search-view {
   padding: 24px;
+}
+/* 翻页加载遮罩：表格上方覆盖，分页器位置保持稳定 */
+.search-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(2px);
+  border-radius: 8px;
+}
+/* 移动端阅读：padding 收窄（宽度本就不受 900px 限制） */
+@media (max-width: 959.98px) {
+  .doc-container {
+    padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+  }
 }
 .header {
   margin-bottom: 24px;
@@ -809,9 +850,14 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(22, 30, 42, 0.32);
+  /* 底色偏实：阅读器 dialog 关闭瞬间 backdrop-filter 重采样晚一帧，
+     底色过透会闪白；够实的底色保证缺帧时仍是稳定暗遮罩 */
+  background: rgba(22, 30, 42, 0.45);
   backdrop-filter: blur(22px) saturate(1.25);
   -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  /* 提前提升独立合成层，减轻上层浮层卸载时的 backdrop 重采样延迟 */
+  transform: translateZ(0);
+  will-change: backdrop-filter;
   outline: none;
 }
 .rp-panel {
